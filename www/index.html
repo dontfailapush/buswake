@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0b0f1a">
+  <title>Bus Alarm</title>
+  <link rel="stylesheet" href="lib/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="map"></div>
+
+  <!-- Search -->
+  <header class="topbar">
+    <div class="search">
+      <svg viewBox="0 0 24 24" class="ico" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Search address or place" autocomplete="off" autocorrect="off" enterkeyhint="search" aria-label="Search address or place">
+      <button id="qclear" class="icon-btn" hidden aria-label="Clear search">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <ul id="results" class="results" hidden></ul>
+  </header>
+
+  <!-- Locate me -->
+  <button id="locate" class="fab" aria-label="Show my location">
+    <svg viewBox="0 0 24 24" class="ico"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="7.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+  </button>
+
+  <!-- Bottom sheet -->
+  <section id="sheet" class="sheet">
+    <div class="grabber"></div>
+
+    <!-- Setup -->
+    <div id="view-setup">
+      <div id="saved" class="chips saved" hidden></div>
+
+      <div class="stop-card">
+        <div class="stop-pin">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+        </div>
+        <div class="stop-text">
+          <div id="stop-title" class="stop-title">No stop selected</div>
+          <div id="stop-sub" class="stop-sub">Tap the map to drop a pin on your stop</div>
+        </div>
+        <button id="save-stop" class="icon-btn star" hidden aria-label="Save this stop">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.9l-5.2 2.8 1-5.9L3.5 9.7l5.9-.8z"/></svg>
+        </button>
+      </div>
+
+      <div class="label-row">
+        <span>Wake me up when I'm within</span>
+        <span id="radius-val" class="accent">½ mi</span>
+      </div>
+      <div id="radius-chips" class="chips seg" role="radiogroup" aria-label="Wake-up distance">
+        <button class="chip" data-m="402" role="radio">¼ mi</button>
+        <button class="chip" data-m="805" role="radio">½ mi</button>
+        <button class="chip" data-m="1609" role="radio">1 mi</button>
+        <button class="chip" data-m="3219" role="radio">2 mi</button>
+      </div>
+      <div id="radius-hint" class="hint-line"></div>
+
+      <button id="start" class="primary" disabled>Start Alarm</button>
+      <button id="test" class="link">Test alarm sound</button>
+    </div>
+
+    <!-- Active -->
+    <div id="view-active" hidden>
+      <div class="status-pill"><span class="dot"></span>Alarm is on</div>
+      <div id="dist" class="big">--</div>
+      <div id="dist-sub" class="sub">Waiting for GPS…</div>
+      <div class="progress"><div id="bar"></div></div>
+      <p class="hint">Lock your phone and keep your music playing. We'll wake you near <b id="active-stop"></b>.<br>Keep media volume up, and don't swipe Bus Alarm away from recent apps.</p>
+      <button id="cancel" class="secondary">Cancel alarm</button>
+    </div>
+  </section>
+
+  <!-- Alarm -->
+  <div id="alarm" class="alarm" hidden>
+    <div class="rings"><i></i><i></i><i></i>
+      <svg viewBox="0 0 24 24" class="bell"><path d="M12 22a2.3 2.3 0 0 0 2.3-2.3h-4.6A2.3 2.3 0 0 0 12 22zm6.5-6.5V11c0-3.1-1.7-5.7-4.5-6.4V4a2 2 0 0 0-4 0v.6C7.2 5.3 5.5 7.9 5.5 11v4.5L3.5 17.5v1h17v-1z"/></svg>
+    </div>
+    <h1>Wake up!</h1>
+    <p id="alarm-sub">Your stop is coming up.</p>
+    <button id="dismiss" class="primary huge">I'm awake</button>
+  </div>
+
+  <!-- Dialog -->
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card">
+      <h3 id="modal-title"></h3>
+      <p id="modal-body"></p>
+      <input id="modal-input" type="text" maxlength="30" autocomplete="off" hidden>
+      <div id="modal-actions" class="modal-actions"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="lib/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "bus-alarm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bus Alarm - sleep on the bus, get woken up at your stop",
+  "scripts": {
+    "sync": "npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.2.21",
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/app": "^6.0.3",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/local-notifications": "^6.1.0",
+    "leaflet": "^1.9.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  }
+}
