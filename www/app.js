@@ -98,9 +98,11 @@
   const map = L.map('map', { zoomControl: false, attributionControl: false, zoomSnap: 0.5 })
     .setView(stop ? [stop.lat, stop.lng] : FALLBACK_CENTER, stop ? 15 : 13);
   L.control.attribution({ position: 'bottomleft', prefix: false }).addTo(map);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    subdomains: 'abcd', maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  // OpenStreetMap's standard tiles need no API key. They are darkened with a CSS filter (see style.css).
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    referrerPolicy: 'origin',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
 
   const pinIcon = L.divIcon({

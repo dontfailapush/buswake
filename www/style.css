@@ -41,6 +41,8 @@ input { font: inherit; color: inherit; }
 /* ---------- Map ---------- */
 #map { position: fixed; inset: 0; background: var(--bg); z-index: 0; }
 .leaflet-container { background: var(--bg); font-family: inherit; }
+/* Turn the light OpenStreetMap tiles into a dark map. */
+.leaflet-tile-pane { filter: invert(1) hue-rotate(200deg) brightness(0.92) contrast(0.92) saturate(0.55); }
 .leaflet-control-attribution {
   background: rgba(11, 15, 26, 0.7) !important;
   color: var(--muted) !important;
