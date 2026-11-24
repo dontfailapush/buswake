@@ -16,6 +16,24 @@ const javaDir = 'android/app/src/main/java/com/busalarm/app';
 fs.mkdirSync(javaDir, { recursive: true });
 fs.cpSync('android-native/java', javaDir, { recursive: true, force: true });
 
+// Sign every build with the same key, so a new build installs over the old one.
+fs.copyFileSync('android-native/debug.keystore', 'android/app/debug.keystore');
+const gradlePath = 'android/app/build.gradle';
+let gradle = fs.readFileSync(gradlePath, 'utf8');
+if (!gradle.includes('debug.keystore')) {
+  gradle = gradle.replace('android {\n', `android {
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+`);
+  fs.writeFileSync(gradlePath, gradle);
+}
+
 // Permissions and the service declaration.
 const manifest = 'android/app/src/main/AndroidManifest.xml';
 let xml = fs.readFileSync(manifest, 'utf8');
