@@ -37,7 +37,11 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon 2>&1 | tee ../build.log || {
+            grep -E "error:|FAILED|What went wrong|Execution failed|cannot find symbol|symbol:|location:" -A2 ../build.log | head -60 | while IFS= read -r line; do echo "::error::${line//%/%25}"; done
+            exit 1
+          }
 
       - name: Save APK
         uses: actions/upload-artifact@v4

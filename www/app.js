@@ -10,8 +10,7 @@
   const getPlugin = (name) => {
     try { return (Cap.Plugins && Cap.Plugins[name]) || Cap.registerPlugin(name); } catch (e) { return null; }
   };
-  const BG = isNative ? getPlugin('BackgroundGeolocation') : null;
-  const LN = isNative ? getPlugin('LocalNotifications') : null;
+  const BA = isNative ? getPlugin('BusAlarm') : null;
   const AppPlugin = isNative ? getPlugin('App') : null;
 
   const store = {
@@ -84,7 +83,6 @@
   let mode = 'setup';                          // setup | active | alarm
   let userLL = null;                           // { lat, lng, accuracy }
   let lastFixAt = 0;
-  let watcherId = null;
   let webWatchId = null;
   let firstFix = true;
   let startDist = 0;
@@ -424,13 +422,15 @@
     try { navigator.vibrate && navigator.vibrate(0); } catch (e) { /* ignore */ }
   }
 
-  $('test').onclick = () => { playSiren({ test: true }); toast('Playing at your current media volume'); };
+  $('test').onclick = () => {
+    if (BA) { BA.testSound().catch(() => {}); toast('Playing at full alarm volume'); return; }
+    playSiren({ test: true });
+    toast('Playing at your current media volume');
+  };
 
   /* ------------------------------------------------------------------ *
    *  Tracking
    * ------------------------------------------------------------------ */
-  const NOTIF_CHANNEL = 'arrival-alarm';
-
   function setMode(m) {
     mode = m;
     $('view-setup').hidden = m !== 'setup';
@@ -440,35 +440,45 @@
     syncSheet();
   }
 
-  async function ensureNotifications() {
-    if (!LN) return;
-    try {
-      await LN.requestPermissions();
-      await LN.createChannel({
-        id: NOTIF_CHANNEL, name: 'Arrival alarm', description: 'Wakes you up when you are near your stop',
-        importance: 5, visibility: 1, vibration: true, lights: true, sound: 'alarm.wav',
-      });
-    } catch (e) { /* notifications are a backup; the siren still plays */ }
+  function resetToSetup() {
+    stopSiren(); stopVibration();
+    setMode('setup');
+    renderStop();
   }
 
   async function firstRunTips() {
-    if (store.get('tips', false)) return;
+    if (store.get('tips', false)) return true;
     store.set('tips', true);
+    if (!BA) return true;
     const r = await dialog({
       title: 'Before you fall asleep',
-      body: '1. Turn your media volume up.\n2. Allow location when asked ("While using the app" is enough).\n3. On Samsung: Settings → Apps → Bus Alarm → Battery → Unrestricted, so the phone never puts the alarm to sleep.',
-      actions: BG ? [{ id: 'settings', label: 'Open settings' }, { id: 'ok', label: 'Got it', main: true }] : [{ id: 'ok', label: 'Got it', main: true }],
+      body: 'Bus Alarm keeps watching in the background, so you can lock your phone and keep playing music. The alarm rings on your phone\'s alarm volume and gets louder on its own.\n\nTo stop Android from ever putting it to sleep, tap "Allow background" and choose Allow. Then tap Start Alarm again.',
+      actions: [{ id: 'skip', label: 'Skip' }, { id: 'allow', label: 'Allow background', main: true }],
     });
-    if (r.action === 'settings' && BG) { try { await BG.openSettings(); } catch (e) { /* ignore */ } return false; }
+    if (r.action === 'allow') { try { await BA.requestBatteryExemption(); } catch (e) { /* ignore */ } return false; }
     return true;
+  }
+
+  async function askLocationSettings() {
+    const r = await dialog({
+      title: 'Location is off',
+      body: 'Bus Alarm needs precise location to know when you are near your stop. Open settings, set Location to "Allow only while using the app" with Precise turned on, then start again.',
+      actions: BA ? [{ id: 'no', label: 'Not now' }, { id: 'go', label: 'Open settings', main: true }] : [{ id: 'no', label: 'OK', main: true }],
+    });
+    if (r.action === 'go' && BA) { try { await BA.openSettings(); } catch (e) { /* ignore */ } }
   }
 
   async function startAlarm() {
     if (!stop || mode !== 'setup') return;
-    initAudio();                              // unlock sound inside the tap
+    initAudio();                              // web fallback only: unlock sound inside the tap
     const proceed = await firstRunTips();
     if (proceed === false) return;
-    initAudio();
+
+    if (BA) {
+      let perm = { location: false };
+      try { perm = await BA.ensurePermissions(); } catch (e) { /* treated as denied */ }
+      if (!perm.location) { askLocationSettings(); return; }
+    }
 
     firstFix = true; fitted = false; startDist = 0;
     lastFixAt = 0;
@@ -478,15 +488,9 @@
     $('active-stop').textContent = stop.title;
     setMode('active');
 
-    await ensureNotifications();
-
     try {
-      if (isNative && BG) {
-        watcherId = await BG.addWatcher({
-          backgroundTitle: 'Bus Alarm is on',
-          backgroundMessage: 'Waking you up near ' + stop.title,
-          requestPermissions: true, stale: false, distanceFilter: 15,
-        }, onFix);
+      if (BA) {
+        await BA.start({ lat: stop.lat, lng: stop.lng, radius, name: stop.title });
       } else if (navigator.geolocation) {
         webWatchId = navigator.geolocation.watchPosition(
           (p) => onFix({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy, time: p.timestamp }),
@@ -501,31 +505,87 @@
     }
   }
 
-  async function removeWatchers() {
-    if (watcherId !== null && BG) { try { await BG.removeWatcher({ id: watcherId }); } catch (e) { /* ignore */ } }
-    watcherId = null;
+  function removeWebWatch() {
     if (webWatchId !== null) { navigator.geolocation.clearWatch(webWatchId); webWatchId = null; }
   }
 
   async function endTracking() {
-    await removeWatchers();
-    stopSiren(); stopVibration();
-    if (LN) { try { await LN.cancel({ notifications: [{ id: 42 }] }); } catch (e) { /* ignore */ } }
-    setMode('setup');
-    renderStop();
+    removeWebWatch();
+    if (BA) { try { await BA.stop(); } catch (e) { /* ignore */ } }
+    resetToSetup();
   }
+
+  /* ---- Native service events (Android app) ---- */
+
+  function showAlarmScreen(d) {
+    if (mode === 'alarm') return;
+    setMode('alarm');
+    $('alarm-sub').textContent = d >= 0 ? `You're ${fmtDist(d)} from ${stop ? stop.title : 'your stop'}.` : 'Your stop is coming up.';
+  }
+
+  function handleNativeFix(f) {
+    if (mode === 'setup' || !stop) return;
+    userLL = { lat: f.latitude, lng: f.longitude, accuracy: f.accuracy };
+    lastFixAt = Date.now();
+    drawMe();
+    if (f.startDistance > 0) startDist = f.startDistance;
+    if (!fitted && stopMarker) {
+      fitted = true;
+      map.fitBounds(L.latLngBounds([userLL.lat, userLL.lng], [stop.lat, stop.lng]), {
+        paddingTopLeft: [50, 90], paddingBottomRight: [50, sheet.offsetHeight + 40], maxZoom: 16,
+      });
+    }
+    if (mode === 'active') updateActive(f.distance);
+  }
+
+  // Re-read the service's state: used when the app is reopened (for example from the lock screen).
+  async function syncNative() {
+    if (!BA) return;
+    let s;
+    try { s = await BA.getState(); } catch (e) { return; }
+    if (s.active) {
+      if (!stop || haversine({ lat: s.lat, lng: s.lng }, stop) > 5) {
+        stop = { lat: s.lat, lng: s.lng, title: s.name || 'Your stop', sub: 'Pinned location' };
+        store.set('stop', stop);
+        drawStop();
+      }
+      if (s.radius) { radius = s.radius; renderRadius(); }
+      $('active-stop').textContent = stop.title;
+      if (s.startDistance > 0) startDist = s.startDistance;
+      if (s.latitude) { userLL = { lat: s.latitude, lng: s.longitude, accuracy: s.accuracy }; lastFixAt = s.time || 0; drawMe(); }
+      if (s.ringing) {
+        showAlarmScreen(s.distance);
+      } else {
+        if (mode !== 'active') setMode('active');
+        if (s.distance >= 0) updateActive(s.distance);
+        else { $('dist').textContent = '--'; $('dist-sub').textContent = 'Waiting for GPS…'; }
+      }
+    } else if (mode !== 'setup') {
+      resetToSetup();
+    }
+  }
+
+  if (BA && BA.addListener) {
+    BA.addListener('fix', handleNativeFix);
+    BA.addListener('alarm', (e) => showAlarmScreen(e && typeof e.distance === 'number' ? e.distance : -1));
+    BA.addListener('stopped', () => { if (mode !== 'setup') resetToSetup(); });
+    BA.addListener('inside', () => toast("You're already inside the wake-up zone. Pick a smaller distance or a farther stop.", 5500));
+    BA.addListener('error', (e) => {
+      if (!e) return;
+      if (e.code === 'not_authorized') { resetToSetup(); askLocationSettings(); }
+      else if (e.code === 'location_off') toast('Turn on Location (GPS) on your phone so the alarm can find you.', 5000);
+      else toast(e.message || 'Something went wrong with the alarm.');
+    });
+  }
+
+  /* ---- Web fallback (browser only) ---- */
 
   function onFix(loc, err) {
     if (err) {
       if (err.code === 'NOT_AUTHORIZED') {
         endTracking();
-        dialog({
-          title: 'Location is off',
-          body: 'Bus Alarm needs location access to know when you are near your stop. Open settings, allow location, then start again.',
-          actions: BG ? [{ id: 'no', label: 'Not now' }, { id: 'go', label: 'Open settings', main: true }] : [{ id: 'no', label: 'OK', main: true }],
-        }).then((r) => { if (r.action === 'go' && BG) BG.openSettings(); });
+        askLocationSettings();
       } else if (mode === 'active' && !lastFixAt) {
-        // Transient GPS hiccup: keep waiting, just say so quietly.
         $('dist-sub').textContent = 'Searching for GPS signal…';
       }
       return;
@@ -537,7 +597,7 @@
     drawMe();
     const d = haversine(userLL, stop);
 
-    if (mode === 'alarm') return;           // already ringing; keep tracking alive until dismissed
+    if (mode === 'alarm') return;
 
     if (firstFix) {
       firstFix = false;
@@ -556,9 +616,12 @@
     }
     updateActive(d);
 
-    // Count a poor GPS fix in the user's favour so a sleeper is never woken late.
     const slack = Math.min(loc.accuracy || 0, 100);
-    if (d - slack <= radius) triggerAlarm(d);
+    if (d - slack <= radius) {
+      showAlarmScreen(d);
+      playSiren();
+      startVibration();
+    }
   }
 
   function updateActive(d) {
@@ -578,30 +641,13 @@
   }
   setInterval(refreshAgo, 15000);
 
-  async function triggerAlarm(d) {
-    if (mode === 'alarm') return;
-    setMode('alarm');
-    $('alarm-sub').textContent = `You're ${fmtDist(d)} from ${stop.title}.`;
-    playSiren();
-    startVibration();
-    if (LN) {
-      try {
-        await LN.schedule({ notifications: [{
-          id: 42, title: 'Wake up! Your stop is close',
-          body: `${stop.title} is ${fmtDist(d)} away.`,
-          channelId: NOTIF_CHANNEL,
-          schedule: { at: new Date(Date.now() + 250) },
-        }] });
-      } catch (e) { /* the siren is the main alarm */ }
-    }
-  }
-
   $('start').onclick = startAlarm;
   $('cancel').onclick = endTracking;
   $('dismiss').onclick = endTracking;
 
   // Android back button: never close the app while an alarm is armed.
   if (AppPlugin && AppPlugin.addListener) {
+    AppPlugin.addListener('appStateChange', (st) => { if (st && st.isActive) syncNative(); });
     AppPlugin.addListener('backButton', () => {
       if (!$('modal').hidden) return;
       if (mode !== 'setup') { AppPlugin.minimizeApp && AppPlugin.minimizeApp(); return; }
@@ -618,4 +664,5 @@
   renderStop();
   if (stop) focus(stop, 15);
   locate(!stop);
+  syncNative();
 })();
